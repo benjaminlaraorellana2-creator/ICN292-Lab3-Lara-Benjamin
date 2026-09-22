@@ -1,0 +1,218 @@
+{
+  "name": "ICN292-Lab3-Lara-Benjamin-resumen",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "91a36c58-b59e-4ab1-a26f-c39060e372ff",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "1BCha6wIsfFdGfSx",
+          "mode": "list",
+          "cachedResultName": "registro_devoluciones",
+          "cachedResultUrl": "/projects/GblAIPwIk4OErt1W/datatables/1BCha6wIsfFdGfSx"
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        224,
+        0
+      ],
+      "id": "4fd3d468-ec61-4c5c-8a98-e195d5871081",
+      "name": "Get row(s)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e3fbaecb-6e0a-4927-912d-a23808a42370",
+              "leftValue": "={{ DateTime.fromISO($json.fecha).toISODate() }}",
+              "rightValue": "={{ $now.toISODate() }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ],
+      "id": "45045e4d-a5da-4a83-a117-4e217ad447cd",
+      "name": "Filter"
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "field": "id_solicitud"
+            },
+            {
+              "aggregation": "sum",
+              "field": "monto"
+            }
+          ]
+        },
+        "fieldsToSplitBy": "ruta",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1.1,
+      "position": [
+        672,
+        0
+      ],
+      "id": "692caa4b-c4ba-4a86-9ad8-9db7c744411b",
+      "name": "Summarize"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "resumen_rutas",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        896,
+        0
+      ],
+      "id": "dc2e764a-536e-422d-a5f0-54e9cdd60ac3",
+      "name": "Aggregate"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3fe5da81-6ed3-43e9-9ac3-e8b0cb20e217",
+              "name": "mensaje",
+              "value": "={{ 'RESUMEN DIARIO DE DEVOLUCIONES\\n\\n' +  'APROBACION:\\n' + ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'APROBACION')?.count_id_solicitud ?? 0) + ' solicitudes\\n$' + ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'APROBACION')?.sum_monto ?? 0).toLocaleString('es-CL') +  '\\n\\nREVISION:\\n' + ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'REVISION')?.count_id_solicitud ?? 0) + ' solicitudes\\n$' + ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'REVISION')?.sum_monto ?? 0).toLocaleString('es-CL') +  '\\n\\nRECHAZO:\\n' + ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'RECHAZO')?.count_id_solicitud ?? 0) + ' solicitudes\\n$' + ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'RECHAZO')?.sum_monto ?? 0).toLocaleString('es-CL') +  '\\n\\nTOTAL SOLICITUDES: ' + $json.resumen_rutas.reduce((a,x) => a + x.count_id_solicitud, 0) +  '\\nMONTO TOTAL: $' + $json.resumen_rutas.reduce((a,x) => a + x.sum_monto, 0).toLocaleString('es-CL') +  '\\nTASA DE APROBACION: ' + (   (     ($json.resumen_rutas.find(x => x.ruta.toUpperCase() === 'APROBACION')?.count_id_solicitud ?? 0)     /     $json.resumen_rutas.reduce((a,x) => a + x.count_id_solicitud, 0)   ) * 100 ).toFixed(2).replace('.', ',') + '%' }}",
+              "type": "string"
+            },
+            {
+              "id": "f4e1d002-7644-4d30-bd7e-64a8cb9be30b",
+              "name": "mensaje",
+              "value": "={{\n'RESUMEN DIARIO DE DEVOLUCIONES\\n\\n' +\n\n'APROBACION:\\n' +\n$json.resumen_rutas[2].count_id_solicitud +\n' solicitudes\\n$' +\nNumber($json.resumen_rutas[2].sum_monto).toLocaleString('es-CL') +\n\n'\\n\\nREVISION:\\n' +\n$json.resumen_rutas[1].count_id_solicitud +\n' solicitudes\\n$' +\nNumber($json.resumen_rutas[1].sum_monto).toLocaleString('es-CL') +\n\n'\\n\\nRECHAZO:\\n' +\n$json.resumen_rutas[0].count_id_solicitud +\n' solicitudes\\n$' +\nNumber($json.resumen_rutas[0].sum_monto).toLocaleString('es-CL') +\n\n'\\n\\nTOTAL SOLICITUDES: ' +\n$json.resumen_rutas.reduce(\n  (total, x) => total + Number(x.count_id_solicitud),\n  0\n) +\n\n'\\nMONTO TOTAL: $' +\n$json.resumen_rutas.reduce(\n  (total, x) => total + Number(x.sum_monto),\n  0\n).toLocaleString('es-CL') +\n\n'\\nTASA DE APROBACION: ' +\n(\n  Number($json.resumen_rutas[2].count_id_solicitud)\n  /\n  $json.resumen_rutas.reduce(\n    (total, x) => total + Number(x.count_id_solicitud),\n    0\n  )\n  * 100\n).toFixed(2).replace('.', ',') + '%'\n}}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "e75ed477-9612-4a41-b227-033c2930d3b4",
+      "name": "Mensaje resumen diario"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s)": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Aggregate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate": {
+      "main": [
+        [
+          {
+            "node": "Mensaje resumen diario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "776a7515-af0b-444f-ac1d-fba5245ce11d",
+  "meta": {
+    "instanceId": "65b08f27b38d6c42ce38cada1cad332c57ae3189076c95468cacc43bce456259"
+  },
+  "nodeGroups": [],
+  "id": "bKmjsqbYiQdzFP2k",
+  "tags": []
+}

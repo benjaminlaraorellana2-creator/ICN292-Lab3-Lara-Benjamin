@@ -1,0 +1,573 @@
+\documentclass[11pt,a4paper]{article}
+
+% =========================================================
+% PAQUETES
+% =========================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{microtype}
+\usepackage{titlesec}
+
+\geometry{top=2.2cm,bottom=2.2cm,left=2.5cm,right=2.5cm}
+\graphicspath{{evidencias/}{./}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.55em}
+\renewcommand{\arraystretch}{1.15}
+
+\definecolor{usmblue}{RGB}{0,62,126}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=usmblue,
+    urlcolor=usmblue,
+    citecolor=usmblue,
+    pdftitle={Laboratorio 3 - Automatización de procesos con n8n},
+    pdfauthor={Benjamín Lara}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{ICN292 --- Sistemas de Información para la Gestión}
+\fancyhead[R]{Laboratorio 3}
+\fancyfoot[C]{\thepage}
+\setlength{\headheight}{14pt}
+
+\titleformat{\section}{\Large\bfseries\color{usmblue}}{\thesection.}{0.5em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection.}{0.5em}{}
+
+\newcommand{\repoURL}{\texttt{[PEGAR AQUÍ URL HTTPS DEL REPOSITORIO GITHUB PÚBLICO]}}
+\newcommand{\testURL}{\texttt{[PEGAR AQUÍ TEST URL DEL WEBHOOK]}}
+\newcommand{\prodURL}{\texttt{[PEGAR AQUÍ PRODUCTION URL DEL WEBHOOK]}}
+
+\begin{document}
+
+% =========================================================
+% PORTADA
+% =========================================================
+\begin{titlepage}
+    \centering
+
+    \includegraphics[width=0.42\textwidth]{logo-usm.png}\par
+    \vspace{0.8cm}
+
+    {\Large\textbf{Universidad Técnica Federico Santa María}\par}
+    \vspace{0.2cm}
+    {\large Departamento de Industrias\par}
+
+    \vspace{1.5cm}
+    {\LARGE\bfseries Laboratorio 3\par}
+    \vspace{0.25cm}
+    {\Large\bfseries Automatización de procesos con n8n\par}
+    \vspace{0.5cm}
+    {\large ICN292 --- Sistemas de Información para la Gestión\par}
+    {\large Segundo Semestre 2026\par}
+
+    \vfill
+
+    \begin{tabular}{rl}
+        \textbf{Estudiante:} & Benjamín Lara \\
+        \textbf{RUT:} & 21.378.238-K \\
+        \textbf{Parámetros:} & \(S=238,\; U=\$68.000,\; D=21\) días \\
+        \textbf{Campus:} & Vitacura \\
+        \textbf{Profesores:} & José Miguel González Pau \\
+                             & José Luis Sáez Tamayo \\
+    \end{tabular}
+
+    \vfill
+
+    {\large \textbf{Repositorio GitHub:}\par}
+    \vspace{0.2cm}
+    https://github.com/benjaminlaraorellana2-creator/ICN292-Lab3-Lara-Benjamin.git
+    \vspace{1.2cm}
+    {\large Septiembre de 2026\par}
+\end{titlepage}
+
+% =========================================================
+% RESUMEN EJECUTIVO
+% =========================================================
+\section*{Resumen ejecutivo}
+\addcontentsline{toc}{section}{Resumen ejecutivo}
+
+Este laboratorio desarrolla un producto mínimo viable en n8n para automatizar el triage de solicitudes de devolución de AndesHogar SpA. El flujo reemplaza una revisión manual inicial por un proceso reproducible que recibe solicitudes mediante un Webhook, aplica reglas de negocio en orden de precedencia, registra la decisión, consulta el valor de la UF mediante una API pública, genera una notificación y responde al emisor. Se implementaron además un workflow emisor para procesar las 15 solicitudes entregadas y un workflow programado para consolidar un resumen diario.
+
+Los parámetros personales se calcularon a partir del RUT 21.378.238-K. Se obtuvo \(S=238\), un umbral de monto de \(U=\$68.000\) y un plazo máximo de \(D=21\) días. La política se implementó respetando la precedencia: primero datos inválidos, luego rechazo, después revisión y finalmente aprobación. En la ejecución de las 15 solicitudes se obtuvieron 4 aprobaciones, 7 revisiones y 4 rechazos, con un monto total procesado de \(\$1.251.820\) y una tasa de aprobación de 26,67\%.
+
+La solución incorpora trazabilidad mediante una Data Table con identificador de solicitud, SKU, monto, ruta, motivo, parámetros \(U\) y \(D\), valor de la UF y monto expresado en UF. El workflow diario consulta esa tabla, filtra por fecha, agrupa por ruta con el nodo Summarize y genera un único mensaje con cantidades, montos y tasa de aprobación. Para un día sin solicitudes se diseñó una rama alternativa que informa cero operaciones y evita divisiones por cero.
+
+También se evaluaron errores y casos borde. Se probaron identificadores vacíos, monto igual a cero, un monto no numérico, los límites \(monto=U\) y \(dias=D\), una comparación deliberadamente tratada como texto y un SKU inexistente. El caso ``veinte mil'' provoca una falla de conversión numérica en el Switch, lo que permitió validar la configuración \textit{Stop Workflow} y un Error Workflow independiente. Como conclusión, el MVP cumple la función de triage, pero para convertirse en un sistema definitivo debería agregar validación estructural previa, verificación de SKU contra catálogo, un mecanismo real de notificación y controles operacionales adicionales.
+
+
+
+\newpage
+\tableofcontents
+\newpage
+
+% =========================================================
+% 1. CONTEXTO Y PARÁMETROS
+% =========================================================
+\section{Contexto y parámetros}
+
+El proceso modelado corresponde al triage inicial de solicitudes de devolución recibidas por el canal de e-commerce de AndesHogar SpA. El objetivo del MVP es decidir de forma automática si cada solicitud debe clasificarse como datos inválidos, rechazo, revisión o aprobación, manteniendo la inspección física fuera del alcance del laboratorio.
+
+Para este trabajo se utilizaron los tres últimos dígitos del RUT sin dígito verificador:
+
+\[
+S = 238
+\]
+
+El umbral de monto se definió como:
+
+\[
+U = 30000 + 1000(S \bmod 50)
+\]
+
+Como \(238 \bmod 50 = 38\):
+
+\[
+\boxed{U = 30000 + 38000 = \$68.000}
+\]
+
+El plazo máximo se definió como:
+
+\[
+D = 7 + 7(S \bmod 4)
+\]
+
+Como \(238 \bmod 4 = 2\):
+
+\[
+\boxed{D = 7 + 14 = 21\text{ días}}
+\]
+
+Por tanto, los parámetros utilizados en todos los nodos del flujo fueron:
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Parámetro} & \textbf{Valor} & \textbf{Uso} \\
+\midrule
+\(S\) & 238 & Semilla personal \\
+\(U\) & \$68.000 & Umbral de monto \\
+\(D\) & 21 días & Plazo máximo \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =========================================================
+% 2. DISEÑO GENERAL
+% =========================================================
+\section{Diseño general de la solución}
+
+Se construyeron tres workflows principales:
+
+\begin{enumerate}[label=\arabic*.]
+    \item \textbf{Triage}: recibe una solicitud mediante Webhook, aplica las reglas de negocio, consulta la UF, registra la solicitud, prepara una notificación y responde al emisor.
+    \item \textbf{Emisor}: contiene las 15 solicitudes, las separa en ítems individuales y las envía por POST al Webhook del workflow de triage.
+    \item \textbf{Resumen diario}: se ejecuta mediante Schedule Trigger, consulta el registro, filtra las solicitudes del día, resume por ruta y genera un único mensaje.
+\end{enumerate}
+
+Además, para la sección de errores se creó un workflow de prueba con Error Trigger, utilizado únicamente para demostrar la captura de fallas. Este flujo no reemplaza ninguno de los tres workflows principales requeridos para la entrega.
+
+\subsection{URLs del Webhook}
+
+n8n entrega dos URLs distintas:
+
+\begin{itemize}
+    \item \textbf{Test URL: https://benjalara.app.n8n.cloud/webhook-test/devoluciones-andeshogar} 
+    \item \textbf{Production URL:} https://benjalara.app.n8n.cloud/webhook/devoluciones-andeshogar
+\end{itemize}
+
+La Test URL se utiliza mientras el workflow está escuchando eventos de prueba desde el editor. La Production URL se utiliza con el workflow publicado y permite recibir solicitudes sin mantener una ejecución manual abierta. Esta diferencia también fue utilizada para validar el Error Workflow, ya que la falla debía producirse en una ejecución automática/publicada.
+
+% =========================================================
+% 3. PARTE A
+% =========================================================
+\section{Parte A --- Flujo de triage}
+
+\subsection{Webhook}
+
+El flujo se inicia con un Webhook configurado con método POST. El cuerpo recibido contiene los campos \texttt{id\_solicitud}, \texttt{sku}, \texttt{unidades}, \texttt{monto}, \texttt{dias\_desde\_compra}, \texttt{estado\_producto} y \texttt{email\_cliente}. Todos los campos llegan como texto, por lo que las comparaciones numéricas se convierten explícitamente mediante \texttt{.toNumber()}.
+
+\subsection{Switch y reglas de negocio}
+
+El nodo Switch se configuró en modo \textit{Rules}. La primera regla que se cumple determina la ruta y detiene la evaluación de las siguientes condiciones, de modo que se respeta la precedencia definida por la política.
+
+\begin{longtable}{p{0.6cm}p{4.2cm}p{3.1cm}p{3.8cm}}
+\toprule
+\textbf{\#} & \textbf{Condición} & \textbf{Salida} & \textbf{Interpretación} \\
+\midrule
+1 & \texttt{id\_solicitud} vacío & INVALIDO\_CAMPO & Falta identificador \\
+2 & \texttt{monto.toNumber() <= 0} & INVALIDO\_MONTO & Monto no positivo \\
+3 & \texttt{dias.toNumber() > 21} & RECHAZO\_PLAZO & Fuera del plazo \\
+4 & \texttt{estado = danado\_por\_uso} & RECHAZO\_ESTADO & Daño por uso \\
+5 & \texttt{monto.toNumber() > 68000} & REVISION\_MONTO & Sobre umbral \\
+6 & \texttt{estado = con\_fallas} & REVISION\_FALLA & Producto con fallas \\
+7 & Fallback & APROBACION & Ninguna regla anterior \\
+\bottomrule
+\end{longtable}
+
+Las siete salidas se consolidaron en cuatro nodos Edit Fields: \textit{Datos inválidos}, \textit{Rechazo}, \textit{Revisión} y \textit{Aprobación}. Cada uno agrega los campos \texttt{ruta} y \texttt{motivo} manteniendo los datos originales.
+
+\subsection{Consulta de UF y monto en UF}
+
+Después de consolidar las ramas, el flujo realiza un HTTP Request GET a:
+
+\begin{center}
+\texttt{https://mindicador.cl/api/uf}
+\end{center}
+
+La respuesta se combina con los datos originales mediante un nodo Merge. El valor utilizado corresponde a \texttt{serie[0].valor}. Luego se calcula:
+
+\[
+monto\_uf = \frac{monto}{valor\_uf}
+\]
+
+En las ejecuciones de evidencia se observó un valor de UF de 40.983,58, variable según la fecha de ejecución.
+
+\subsection{Registro y notificación}
+
+Cada solicitud se inserta en la Data Table \texttt{registro\_devoluciones}. Se registran como mínimo:
+
+\begin{itemize}
+    \item fecha,
+    \item identificador,
+    \item SKU,
+    \item monto,
+    \item días desde la compra,
+    \item estado del producto,
+    \item email,
+    \item ruta y motivo,
+    \item \(U\) y \(D\),
+    \item valor de UF y monto en UF.
+\end{itemize}
+
+Luego se genera una notificación estructurada con destinatario, asunto y mensaje. Dado que las direcciones suministradas son direcciones de ejemplo, el MVP prepara la notificación sin depender de credenciales de correo reales.
+
+\subsection{Ejecución exitosa del flujo}
+
+La Figura \ref{fig:workflow_invalido} muestra una ejecución completa del workflow de triage. En este ejemplo, la solicitud se dirige por la rama de datos inválidos y continúa correctamente hasta el registro, notificación y respuesta.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{workflow_invalido_campo.png}
+    \caption{Ejecución exitosa del workflow de triage con ruta de datos inválidos.}
+    \label{fig:workflow_invalido}
+\end{figure}
+
+\subsection{Resultados de las 15 solicitudes}
+
+Los resultados obtenidos fueron los siguientes:
+
+\begin{longtable}{llll}
+\toprule
+\textbf{Solicitud} & \textbf{Monto} & \textbf{Ruta} & \textbf{Motivo} \\
+\midrule
+DEV-1115 & \$19.990 & APROBACION & APROBACION \\
+DEV-1116 & \$69.980 & REVISION & REVISION\_MONTO \\
+DEV-1117 & \$24.990 & REVISION & REVISION\_FALLA \\
+DEV-1118 & \$79.990 & REVISION & REVISION\_MONTO \\
+DEV-1119 & \$45.990 & RECHAZO & RECHAZO\_PLAZO \\
+DEV-1120 & \$89.990 & REVISION & REVISION\_MONTO \\
+DEV-1121 & \$289.990 & REVISION & REVISION\_MONTO \\
+DEV-1122 & \$45.990 & APROBACION & APROBACION \\
+DEV-1123 & \$39.980 & RECHAZO & RECHAZO\_ESTADO \\
+DEV-1124 & \$49.980 & APROBACION & APROBACION \\
+DEV-1125 & \$34.990 & RECHAZO & RECHAZO\_PLAZO \\
+DEV-1126 & \$79.990 & REVISION & REVISION\_MONTO \\
+DEV-C01 & \$9.990 & APROBACION & APROBACION \\
+DEV-C02 & \$289.990 & REVISION & REVISION\_MONTO \\
+DEV-C03 & \$79.990 & RECHAZO & RECHAZO\_PLAZO \\
+\bottomrule
+\end{longtable}
+
+La precedencia también se verifica en casos con más de una causal. Por ejemplo, DEV-1119 está fuera de plazo y además tiene estado \texttt{danado\_por\_uso}; al aparecer primero la regla de plazo, queda registrado como RECHAZO\_PLAZO.
+
+El resumen agregado fue:
+
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Ruta} & \textbf{Cantidad} & \textbf{Monto total} \\
+\midrule
+APROBACION & 4 & \$125.950 \\
+REVISION & 7 & \$924.920 \\
+RECHAZO & 4 & \$200.950 \\
+\midrule
+TOTAL & 15 & \$1.251.820 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La tasa de aprobación corresponde a:
+
+\[
+\frac{4}{15}\times 100 = \boxed{26,67\%}
+\]
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.88\textwidth]{resultados_15.png}
+    \caption{Salida del workflow emisor con 15 ítems procesados.}
+\end{figure}
+
+% =========================================================
+% 4. PARTE B
+% =========================================================
+\section{Parte B --- Flujo programado de resumen}
+
+El tercer workflow utiliza un Schedule Trigger para ejecutar el proceso una vez al día. La lógica implementada es:
+
+\begin{center}
+Schedule Trigger \(\rightarrow\) Get Rows \(\rightarrow\) Filter \(\rightarrow\) IF \(\rightarrow\) Summarize \(\rightarrow\) Aggregate \(\rightarrow\) Mensaje
+\end{center}
+
+El nodo \textit{Get row(s)} obtiene los registros de \texttt{registro\_devoluciones}. El filtro compara la fecha ISO almacenada con la fecha del día actual. Si existen solicitudes, el nodo Summarize agrupa por \texttt{ruta}, cuenta \texttt{id\_solicitud} y suma \texttt{monto}. Posteriormente, Aggregate reúne las tres filas en un solo ítem y un Edit Fields genera el mensaje consolidado.
+
+La frecuencia escogida fue una ejecución diaria al final de la jornada, a las 23:00. Esto permite resumir la actividad del día en una sola salida.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{resumen_4_7_4.png}
+    \caption{Resultado del nodo Summarize: 4 rechazos, 7 revisiones y 4 aprobaciones.}
+\end{figure}
+
+El mensaje consolidado contiene:
+
+\begin{itemize}
+    \item cantidad de solicitudes por ruta,
+    \item monto total por ruta,
+    \item total de solicitudes del día,
+    \item monto total del día,
+    \item tasa de aprobación.
+\end{itemize}
+
+Para las 15 solicitudes, el mensaje queda conceptualmente:
+
+\begin{verbatim}
+RESUMEN DIARIO DE DEVOLUCIONES
+
+APROBACION: 4 solicitudes - $125.950
+REVISION:   7 solicitudes - $924.920
+RECHAZO:    4 solicitudes - $200.950
+
+TOTAL SOLICITUDES: 15
+MONTO TOTAL: $1.251.820
+TASA DE APROBACION: 26,67%
+\end{verbatim}
+
+\subsection{Día sin solicitudes}
+
+Si el filtro no encuentra solicitudes, se utiliza \textit{Always Output Data} y un nodo IF para dirigir la ejecución a una rama alternativa. De esta manera el workflow no termina sin salida y genera un mensaje equivalente a:
+
+\begin{verbatim}
+RESUMEN DIARIO DE DEVOLUCIONES
+
+No se registraron solicitudes durante el día.
+TOTAL SOLICITUDES: 0
+MONTO TOTAL: $0
+TASA DE APROBACION: N/A
+\end{verbatim}
+
+La tasa se informa como no aplicable para evitar una división \(0/0\).
+
+% =========================================================
+% 5. PARTE C
+% =========================================================
+\section{Parte C --- Errores y casos borde}
+
+\subsection{Tres entradas inválidas}
+
+Se evaluaron tres entradas distintas.
+
+\begin{center}
+\begin{tabular}{p{4cm}p{5cm}p{4.2cm}}
+\toprule
+\textbf{Entrada} & \textbf{Resultado esperado} & \textbf{Resultado observado} \\
+\midrule
+\texttt{id\_solicitud = ""} & Datos inválidos & DATOS\_INVALIDOS / INVALIDO\_CAMPO \\
+\texttt{monto = "0"} & Datos inválidos & DATOS\_INVALIDOS / INVALIDO\_MONTO \\
+\texttt{monto = "veinte mil"} & Falla de conversión & Error en Switch: \texttt{cannot convert to number} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+La Figura \ref{fig:invalidomonto} muestra la segunda entrada inválida.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{invalido_monto.png}
+    \caption{Entrada con monto igual a cero clasificada como INVALIDO\_MONTO.}
+    \label{fig:invalidomonto}
+\end{figure}
+
+\subsection{Opciones de On Error}
+
+El nodo Switch ofrece tres opciones de manejo de errores:
+
+\begin{itemize}
+    \item \textbf{Stop Workflow}: detiene la ejecución y marca el workflow como fallido.
+    \item \textbf{Continue}: entrega el error por la salida normal y permite que el flujo continúe.
+    \item \textbf{Continue (using error output)}: entrega el error por una salida especial para tratarlo en otra rama.
+\end{itemize}
+
+Para este laboratorio se escogió \textbf{Stop Workflow} en el Switch. Un monto no convertible no debe continuar hacia registro ni aprobación, porque podría generar una decisión inválida.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.48\textwidth]{on_error_opciones.png}
+    \caption{Opciones de manejo de error disponibles en el nodo Switch.}
+\end{figure}
+
+\subsection{Error Workflow}
+
+Se configuró un workflow independiente iniciado por Error Trigger y conectado a un Edit Fields denominado \textit{Registrar error}. Este flujo registra la fecha, nombre del workflow, mensaje del error y último nodo ejecutado. Luego se seleccionó como Error Workflow del workflow de triage de pruebas.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{error_trigger.png}
+    \caption{Nodo Error Trigger utilizado para capturar fallas de otro workflow.}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\textwidth]{registrar_error.png}
+    \caption{Campos registrados por el Error Workflow.}
+\end{figure}
+
+Un workflow programado puede ejecutarse cuando no existe un usuario observando el editor. Si falla y no tiene un Error Workflow asociado, el error puede quedar únicamente en el historial de ejecuciones, sin desencadenar una acción de tratamiento o notificación. El Error Workflow permite convertir esa falla en un evento procesable.
+
+\subsection{Ejecución fallida: monto no numérico}
+
+Se envió una solicitud con:
+
+\begin{center}
+\texttt{"monto": "veinte mil"}
+\end{center}
+
+El Switch intenta convertir el monto mediante \texttt{.toNumber()}. Como la cadena no representa un número, el nodo falla con el mensaje \texttt{cannot convert to number}, y el flujo se detiene.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{error_veinte_mil_switch.png}
+    \caption{Ejecución fallida al intentar convertir ``veinte mil'' a número.}
+\end{figure}
+
+Para un sistema definitivo se recomienda validar el formato antes del Switch y clasificar montos no convertibles como datos inválidos, en lugar de provocar una caída operacional.
+
+\subsection{Casos límite}
+
+Se construyeron dos solicitudes adicionales.
+
+\subsubsection*{Monto exactamente igual a \(U\)}
+
+Con \texttt{monto = 68000}, la regla \texttt{monto > 68000} es falsa. Por lo tanto, si no se activa otra causal, la solicitud queda aprobada.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{limite_U_68000.png}
+    \caption{Caso límite \(monto=U=\$68.000\), clasificado como APROBACION.}
+\end{figure}
+
+\subsubsection*{Días exactamente igual a \(D\)}
+
+Con \texttt{dias\_desde\_compra = 21}, la regla \texttt{dias > 21} es falsa. El día 21 se considera dentro del plazo.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{limite_D_21.png}
+    \caption{Caso límite \(dias=D=21\), clasificado como APROBACION.}
+\end{figure}
+
+\subsection{Error de tipo a propósito}
+
+La comparación de monto se modificó temporalmente para reproducir una comparación textual. La versión utilizada de n8n no ofrece directamente el operador relacional ``greater than'' para String, por lo que se evaluó de forma explícita la comparación lexicográfica y se transformó su resultado a texto para la regla.
+
+Con DEV-C01, el monto es \texttt{"9990"}. Numéricamente:
+
+\[
+9990 < 68000
+\]
+
+Sin embargo, como texto se compara inicialmente \texttt{"9"} con \texttt{"6"}, por lo que la condición textual puede evaluarse como verdadera. Como consecuencia, DEV-C01 fue enviado incorrectamente a la ruta de revisión. Esto demuestra que el tipo de dato afecta directamente el resultado de una comparación.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{error_tipo_DEV_C01.png}
+    \caption{DEV-C01 enviado incorrectamente a revisión al forzar una comparación textual.}
+\end{figure}
+
+Después de la prueba, la regla se restituyó a tipo Number con \texttt{monto.toNumber() > 68000}.
+
+\subsection{Casos que el flujo no resuelve}
+
+\subsubsection*{Monto ``veinte mil''}
+
+El flujo no puede clasificarlo porque las reglas suponen que el monto es convertible a número. Se requiere una etapa previa de validación de formato.
+
+\subsubsection*{SKU ``ZZ-999''}
+
+El flujo actual no consulta el catálogo para verificar la existencia del SKU. Por ese motivo, una solicitud con \texttt{sku = ZZ-999}, monto \$19.990, tres días y estado \texttt{sin\_abrir} termina en APROBACION, aunque el SKU no existe en el catálogo entregado.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{sku_inexistente_ZZ999.png}
+    \caption{Solicitud con SKU inexistente clasificada como APROBACION por ausencia de validación de catálogo.}
+\end{figure}
+
+Para resolverlo se recomienda incorporar un lookup previo al catálogo y enviar los SKU inexistentes a datos inválidos o revisión.
+
+% =========================================================
+% 6. CONCLUSIONES
+% =========================================================
+\section{Conclusiones y recomendación}
+
+El MVP demuestra que el triage inicial de devoluciones puede automatizarse de manera trazable y auditable con n8n. La separación entre Webhook, Switch, Edit Fields, HTTP Request, Data Table y Respond to Webhook hace visible la lógica de negocio y facilita revisar por qué una solicitud tomó una ruta determinada.
+
+La precedencia de las reglas fue un aspecto central. Casos como un producto simultáneamente fuera de plazo y dañado por uso deben quedar asociados a la primera causal definida por la política. De igual forma, los casos límite confirmaron que \(monto=U\) y \(dias=D\) permanecen dentro de las condiciones de aprobación.
+
+El principal riesgo observado se relaciona con la calidad y tipo de los datos de entrada. Los formularios entregan texto, por lo que una conversión incorrecta puede causar fallas o clasificaciones erróneas. Para una versión definitiva se recomienda incorporar una etapa de validación estructural antes del Switch, verificar SKU contra un catálogo persistente, utilizar un canal real de notificación, establecer monitoreo mediante Error Workflow y agregar controles para evitar registros duplicados.
+
+En términos de mantenibilidad, la implementación sin código permite auditar visualmente cada regla. Dado el tamaño actual de la política, mantener el Switch como componente principal resulta adecuado. Si el número de reglas aumentara significativamente o se requirieran reglas parametrizadas por producto, canal o cliente, sería conveniente evaluar una separación entre configuración de reglas y lógica de ejecución.
+
+% =========================================================
+% 7. REPOSITORIO Y REPRODUCCIÓN
+% =========================================================
+\section{Repositorio y reproducción}
+
+Repositorio público:
+
+https://github.com/benjaminlaraorellana2-creator/ICN292-Lab3-Lara-Benjamin.git
+
+Para reproducir la solución:
+
+\begin{enumerate}
+    \item Importar \texttt{ICN292-Lab3-Lara-Benjamin-triage.json} en n8n.
+    \item Crear o verificar la Data Table \texttt{registro\_devoluciones} con las columnas utilizadas por el flujo.
+    \item Publicar el workflow de triage y copiar su Production URL.
+    \item Importar \texttt{ICN292-Lab3-Lara-Benjamin-emisor.json} y configurar el HTTP Request con la URL del triage.
+    \item Ejecutar el workflow emisor para procesar las 15 solicitudes.
+    \item Importar \texttt{ICN292-Lab3-Lara-Benjamin-resumen.json}, verificar la zona horaria y publicar el workflow programado.
+    \item Confirmar que ningún JSON publicado contenga credenciales, tokens o contraseñas.
+\end{enumerate}
+
+% =========================================================
+% 8. EVIDENCIAS
+% =========================================================
+\section{Evidencias incluidas}
+
+Las capturas utilizadas en este informe se adjuntan también como archivos independientes en la carpeta \texttt{evidencias}. Se incluyen ejecuciones exitosas, una ejecución fallida, resultados agregados, casos límite y pruebas de errores de tipo y validación.
+
+\end{document}
